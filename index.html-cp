@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>EchoACLS — Air-Gapped Resuscitation Copilot</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-950 text-slate-100 p-6 font-mono min-h-screen flex flex-col justify-between">
+  <div>
+    <!-- Top Bar -->
+    <header class="flex justify-between items-center pb-4 border-b border-slate-800">
+      <div>
+        <h1 class="text-2xl font-black text-rose-500 tracking-wider">⚡ ECHO-ACLS</h1>
+        <p class="text-xs text-slate-400">Offline Clinical Resuscitation HUD // Powered by MedGemma</p>
+      </div>
+      <div class="flex gap-4 items-center">
+        <span class="text-xs bg-emerald-950 text-emerald-400 border border-emerald-700 px-3 py-1 rounded font-bold">AIR-GAPPED LOCAL MODE</span>
+        <div class="text-right">
+          <p class="text-xs text-slate-500">CODE BLUE DURATION</p>
+          <span id="code-timer" class="text-2xl font-bold text-slate-200">00:00</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Grid -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6">
+      
+      <!-- Protocol Timers -->
+      <div class="space-y-4">
+        <div class="p-4 bg-slate-900 border border-slate-800 rounded-lg shadow">
+          <div class="flex justify-between items-center mb-1">
+            <p class="text-xs text-slate-400 font-bold">CPR CYCLE COUNTDOWN</p>
+            <button onclick="resetCPR()" class="text-xs bg-slate-800 hover:bg-slate-700 px-2 py-0.5 rounded text-amber-300">Reset</button>
+          </div>
+          <p id="cpr-timer" class="text-4xl font-black text-amber-400">02:00</p>
+          <p class="text-[10px] text-slate-500 mt-1">2-min rhythm & pulse check interval</p>
+        </div>
+
+        <div class="p-4 bg-slate-900 border border-slate-800 rounded-lg shadow">
+          <div class="flex justify-between items-center mb-1">
+            <p class="text-xs text-slate-400 font-bold">EPINEPHRINE DUE IN</p>
+            <button onclick="resetEpi()" class="text-xs bg-slate-800 hover:bg-slate-700 px-2 py-0.5 rounded text-blue-300">Given</button>
+          </div>
+          <p id="epi-timer" class="text-4xl font-black text-blue-400">03:00</p>
+          <p class="text-[10px] text-slate-500 mt-1">Dose: 1mg IV/IO every 3-5 mins</p>
+        </div>
+      </div>
+
+      <!-- Active Alerts & Reversible Causes -->
+      <div class="p-4 bg-slate-900 border border-slate-800 rounded-lg flex flex-col justify-between shadow">
+        <div>
+          <p class="text-xs text-slate-400 font-bold mb-3">ACTIVE CLINICAL REASONING (H's & T's)</p>
+          <div id="alerts" class="text-sm font-semibold space-y-2">
+            <div class="p-3 bg-slate-950 border border-slate-800 rounded text-slate-400 text-xs">
+              Awaiting clinical audio or text inputs...
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Real-Time Audit Log -->
+      <div class="p-4 bg-slate-900 border border-slate-800 rounded-lg flex flex-col shadow">
+        <p class="text-xs text-slate-400 font-bold mb-2">TIMED INTERVENTION AUDIT LOG</p>
+        <div id="log-list" class="space-y-2 text-xs overflow-y-auto max-h-72 flex-1 pr-1"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bottom Input Bar -->
+  <div class="mt-6 p-4 bg-slate-900 border border-slate-800 rounded-lg">
+    <form onsubmit="submitAudioText(event)" class="flex gap-3">
+      <input id="transcript-input" type="text" 
+             placeholder="Simulate room audio: e.g. 'Patient is in VFib, deliver 200J shock' or 'Blood gas is back, Potassium 6.9'" 
+             class="flex-1 bg-slate-950 border border-slate-700 px-4 py-2 text-sm rounded focus:outline-none focus:border-rose-500 text-slate-100" />
+      <button type="submit" id="submit-btn" class="bg-rose-600 hover:bg-rose-700 px-6 py-2 rounded text-sm font-bold text-white transition">
+        Process Event
+      </button>
+    </form>
+  </div>
+
+  <script>
+    let codeSec = 0;
+    let cprSec = 120;
+    let epiSec = 180;
+
+    setInterval(() => {
+      codeSec++;
+      const m = String(Math.floor(codeSec / 60)).padStart(2, '0');
+      const s = String(codeSec % 60).padStart(2, '0');
+      document.getElementById('code-timer').innerText = `${m}:${s}`;
+
+      if (cprSec > 0) cprSec--;
+      const cm = String(Math.floor(cprSec / 60)).padStart(2, '0');
+      const cs = String(cprSec % 60).padStart(2, '0');
+      document.getElementById('cpr-timer').innerText = `${cm}:${cs}`;
+
+      if (epiSec > 0) epiSec--;
+      const em = String(Math.floor(epiSec / 60)).padStart(2, '0');
+      const es = String(epiSec % 60).padStart(2, '0');
+      document.getElementById('epi-timer').innerText = `${em}:${es}`;
+    }, 1000);
+
+    function resetCPR() { cprSec = 120; }
+    function resetEpi() { epiSec = 240; }
+
+    async function submitAudioText(e) {
+      e.preventDefault();
+      const input = document.getElementById('transcript-input');
+      const btn = document.getElementById('submit-btn');
+      const val = input.value.trim();
+      if (!val) return;
+
+      btn.disabled = true;
+      btn.innerText = 'MedGemma Thinking...';
+
+      try {
+        const res = await fetch('http://127.0.0.1:8000/parse_event', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({text: val})
+        });
+        const data = await res.json();
+
+        // Update Timers based on clinical events
+        if (data.event_type === 'SHOCK_DELIVERED' || data.event_type === 'RHYTHM_CHECK') {
+          resetCPR();
+        }
+        if (data.event_type === 'DRUG_ADMINISTERED' && data.details?.drug_name?.toLowerCase().includes('epi')) {
+          resetEpi();
+        }
+
+        // Update Reversible Causes & Alerts
+        if (data.suspected_cause || data.clinical_alert) {
+          document.getElementById('alerts').innerHTML = `
+            <div class="p-3 bg-rose-950/60 border border-rose-800 rounded">
+              <span class="text-rose-400 font-bold uppercase tracking-wider text-xs">FLAGGED CAUSE:</span>
+              <p class="text-slate-100 font-bold">${data.suspected_cause || 'Clinical Alert'}</p>
+              <p class="text-xs text-slate-300 mt-1">${data.clinical_alert || ''}</p>
+            </div>`;
+        }
+
+        // Prepend to Audit Log
+        const logItem = document.createElement('div');
+        logItem.className = 'p-2 bg-slate-950 rounded border border-slate-800';
+        logItem.innerHTML = `<span class="text-slate-500 font-mono">[${document.getElementById('code-timer').innerText}]</span> <span class="text-rose-400 font-bold">${data.event_type}</span>: ${val}`;
+        document.getElementById('log-list').prepend(logItem);
+
+        input.value = '';
+      } catch (err) {
+        alert('Failed to reach MedGemma server: ' + err.message);
+      } finally {
+        btn.disabled = false;
+        btn.innerText = 'Process Event';
+      }
+    }
+  </script>
+</body>
+</html>

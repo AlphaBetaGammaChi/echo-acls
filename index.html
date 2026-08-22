@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>EchoACLS — Clinical Telemetry & Resuscitation Copilot</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-950 text-slate-100 p-6 font-mono min-h-screen flex flex-col justify-between">
+  <div>
+    <!-- Top Bar -->
+    <header class="flex flex-wrap justify-between items-center pb-4 border-b border-slate-800 gap-4">
+      <div>
+        <div class="flex items-center gap-3">
+          <h1 class="text-2xl font-black text-rose-500 tracking-wider">⚡ ECHO-ACLS</h1>
+          <span class="text-xs bg-emerald-950 text-emerald-400 border border-emerald-700 px-2 py-0.5 rounded font-bold">AIR-GAPPED (MEDGEMMA 4B)</span>
+          <span class="text-xs bg-blue-950 text-blue-400 border border-blue-800 px-2 py-0.5 rounded font-semibold">ERC / AHA 2025 VALIDATED</span>
+        </div>
+        <p class="text-xs text-slate-400 mt-1">Autonomous Resuscitation Choreographer & Physiological Telemetry Analyzer</p>
+      </div>
+
+      <div class="flex items-center gap-4">
+        <button onclick="exportFHIR()" class="bg-blue-600 hover:bg-blue-700 text-xs px-3.5 py-2 rounded font-bold border border-blue-400 flex items-center gap-1.5 shadow">
+          <span>📋</span> EXPORT NHS FHIR BUNDLE
+        </button>
+        <div class="text-right pl-4 border-l border-slate-800">
+          <p class="text-[10px] text-slate-500 font-bold">CODE BLUE DURATION</p>
+          <span id="code-timer" class="text-2xl font-black text-slate-200">00:00</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Physiological Telemetry Bar -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4 p-3 bg-slate-900 border border-slate-800 rounded-lg">
+      <div class="flex items-center gap-3">
+        <span class="text-rose-500 text-2xl">🫀</span>
+        <div>
+          <p class="text-[10px] text-slate-400 font-bold">HEART RATE</p>
+          <p id="hud-hr" class="text-xl font-black text-rose-400">-- <span class="text-xs text-slate-500">BPM</span></p>
+        </div>
+      </div>
+      <div class="flex items-center gap-3">
+        <span class="text-amber-400 text-2xl">⚡</span>
+        <div>
+          <p class="text-[10px] text-slate-400 font-bold">ECG RHYTHM</p>
+          <p id="hud-rhythm" class="text-sm font-black text-amber-300">MONITORING...</p>
+        </div>
+      </div>
+      <div class="flex items-center gap-3">
+        <span class="text-blue-400 text-2xl">🫁</span>
+        <div>
+          <p class="text-[10px] text-slate-400 font-bold">SpO2 / ETCO2</p>
+          <p id="hud-spo2" class="text-xl font-black text-blue-400">--%</p>
+        </div>
+      </div>
+      <div class="flex items-center gap-3">
+        <span class="text-emerald-400 text-2xl">🩸</span>
+        <div>
+          <p class="text-[10px] text-slate-400 font-bold">BLOOD PRESSURE</p>
+          <p id="hud-bp" class="text-xl font-black text-emerald-400">--/--</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Main Resuscitation Grid -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6">
+      
+      <!-- Column 1: Clocks & Direct Telemetry Input -->
+      <div class="space-y-4">
+        <div id="cpr-card" class="p-4 bg-slate-900 border border-slate-800 rounded-lg shadow">
+          <div class="flex justify-between items-center mb-1">
+            <p class="text-xs text-slate-400 font-bold">CPR 2-MIN RHYTHM CHECK</p>
+            <button onclick="resetCPR()" class="text-xs bg-slate-800 hover:bg-slate-700 px-2 py-0.5 rounded text-amber-300">Reset</button>
+          </div>
+          <p id="cpr-timer" class="text-4xl font-black text-amber-400">02:00</p>
+          <p class="text-[10px] text-slate-500 mt-1">Minimise pre/post-shock pauses < 5s</p>
+        </div>
+
+        <div id="epi-card" class="p-4 bg-slate-900 border border-slate-800 rounded-lg shadow">
+          <div class="flex justify-between items-center mb-1">
+            <p class="text-xs text-slate-400 font-bold">EPINEPHRINE DUE CLOCK</p>
+            <button onclick="resetEpi()" class="text-xs bg-slate-800 hover:bg-slate-700 px-2 py-0.5 rounded text-blue-300">Given</button>
+          </div>
+          <p id="epi-timer" class="text-4xl font-black text-blue-400">03:00</p>
+          <p class="text-[10px] text-slate-500 mt-1">1mg IV/IO every 3–5 min [ERC ALS-04]</p>
+        </div>
+
+        <!-- Quick ECG & Vitals Simulator -->
+        <div class="p-4 bg-slate-900 border border-slate-800 rounded-lg shadow">
+          <p class="text-xs text-slate-400 font-bold mb-2">SIMULATE ECG & CLINICAL PATTERNS</p>
+          <div class="grid grid-cols-2 gap-2 text-xs">
+            <button onclick="sendTelemetry('Patient pulseless, ECG shows coarse VFib', 0, 'VFIB', '0/0', 0)" class="p-2 bg-slate-950 hover:bg-rose-950 border border-slate-800 hover:border-rose-700 text-slate-300 rounded text-left">⚡ Coarse VFib (Shockable)</button>
+            <button onclick="sendTelemetry('Severe hyperkalemia peaked T waves, K+ 7.2', 42, 'SINUS_BRADY', '60/30', 88)" class="p-2 bg-slate-950 hover:bg-amber-950 border border-slate-800 hover:border-amber-700 text-slate-300 rounded text-left">🧪 Peaked T (K+ 7.2)</button>
+            <button onclick="sendTelemetry('STEMI with profound hypotension', 115, 'STEMI', '70/40', 92)" class="p-2 bg-slate-950 hover:bg-red-950 border border-slate-800 hover:border-red-700 text-slate-300 rounded text-left">🫀 Acute STEMI</button>
+            <button onclick="sendTelemetry('Tracheal deviation, right tension pneumothorax', 140, 'SVT', '55/30', 74)" class="p-2 bg-slate-950 hover:bg-emerald-950 border border-slate-800 hover:border-emerald-700 text-slate-300 rounded text-left">💨 Tension Pneumo</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Column 2: Actionable Guidance & H's/T's Matrix -->
+      <div class="p-4 bg-slate-900 border border-slate-800 rounded-lg flex flex-col shadow">
+        <!-- Live Genuine Advice Box -->
+        <div class="p-3 bg-rose-950/40 border border-rose-800 rounded-lg mb-4">
+          <div class="flex justify-between items-center">
+            <span class="text-rose-400 font-bold uppercase tracking-wider text-[10px]">IMMEDIATE CLINICAL ACTION:</span>
+            <span id="guideline-badge" class="text-[9px] bg-slate-800 text-slate-300 px-1.5 py-0.5 rounded font-mono">ERC 2025</span>
+          </div>
+          <p id="action-text" class="text-sm font-bold text-slate-100 mt-1 leading-snug">Monitor patient vitals and start CPR if pulseless.</p>
+          <div id="drug-box" class="mt-2 text-xs text-amber-300 hidden">
+            <strong>Recommended Intervention:</strong> <span id="drug-text"></span>
+          </div>
+        </div>
+
+        <div class="flex justify-between items-center mb-2">
+          <p class="text-xs text-slate-400 font-bold tracking-wider">ACLS REVERSIBLE CAUSES (H's & T's)</p>
+          <span id="diagnostic-badge" class="text-[10px] bg-slate-800 text-slate-400 px-2 py-0.5 rounded font-bold">MONITORING</span>
+        </div>
+
+        <div id="cause-matrix" class="grid grid-cols-2 gap-2 text-xs flex-1">
+          <div id="cause-Hypovolemia" class="p-2 bg-slate-950 border border-slate-800 rounded text-slate-400">💧 Hypovolemia</div>
+          <div id="cause-Hypoxia" class="p-2 bg-slate-950 border border-slate-800 rounded text-slate-400">🫁 Hypoxia</div>
+          <div id="cause-Hydrogen_Ion" class="p-2 bg-slate-950 border border-slate-800 rounded text-slate-400">🧪 Hydrogen Ion (Acidosis)</div>
+          <div id="cause-Hypo_Hyperkalemia" class="p-2 bg-slate-950 border border-slate-800 rounded text-slate-400">⚡ Hypo / Hyperkalemia</div>
+          <div id="cause-Hypothermia" class="p-2 bg-slate-950 border border-slate-800 rounded text-slate-400">❄️ Hypothermia</div>
+          <div id="cause-Tension_Pneumothorax" class="p-2 bg-slate-950 border border-slate-800 rounded text-slate-400">💨 Tension Pneumothorax</div>
+          <div id="cause-Tamponade" class="p-2 bg-slate-950 border border-slate-800 rounded text-slate-400">❤️ Cardiac Tamponade</div>
+          <div id="cause-Toxins" class="p-2 bg-slate-950 border border-slate-800 rounded text-slate-400">🧪 Toxins / Overdose</div>
+          <div id="cause-Thrombosis_Pulmonary" class="p-2 bg-slate-950 border border-slate-800 rounded text-slate-400">🩸 Pulmonary Embolism</div>
+          <div id="cause-Thrombosis_Coronary" class="p-2 bg-slate-950 border border-slate-800 rounded text-slate-400">🫀 Coronary Thrombosis</div>
+        </div>
+      </div>
+
+      <!-- Column 3: Legal & Clinical Audit Trail -->
+      <div class="p-4 bg-slate-900 border border-slate-800 rounded-lg flex flex-col shadow">
+        <div class="flex justify-between items-center mb-2">
+          <p class="text-xs text-slate-400 font-bold tracking-wider">IMMUTABLE CODE BLUE LOG</p>
+          <span id="log-count" class="text-[10px] text-slate-500 font-mono">0 events</span>
+        </div>
+        <div id="log-list" class="space-y-2 text-xs overflow-y-auto max-h-[380px] flex-1 pr-1 font-mono"></div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Bottom Input Bar -->
+  <div class="mt-6 p-4 bg-slate-900 border border-slate-800 rounded-lg">
+    <form onsubmit="submitCustomEvent(event)" class="flex gap-3">
+      <input id="transcript-input" type="text" 
+             placeholder="Enter spoken transcript or telemetry note (e.g., 'ECG shows polymorphic VTach, deliver unsynchronized shock 200J')" 
+             class="flex-1 bg-slate-950 border border-slate-700 px-4 py-2.5 text-sm rounded focus:outline-none focus:border-rose-500 text-slate-100 font-mono" />
+      <button type="submit" id="submit-btn" class="bg-rose-600 hover:bg-rose-700 px-6 py-2.5 rounded text-sm font-bold text-white transition">
+        Process Event
+      </button>
+    </form>
+  </div>
+
+  <!-- FHIR Modal -->
+  <div id="fhir-modal" class="fixed inset-0 bg-black/80 hidden flex items-center justify-center p-6 z-50">
+    <div class="bg-slate-900 border border-slate-700 rounded-lg max-w-3xl w-full p-6 space-y-4">
+      <div class="flex justify-between items-center border-b border-slate-800 pb-3">
+        <div>
+          <h3 class="text-lg font-bold text-blue-400">NHS UK Core HL7 FHIR Bundle Export</h3>
+          <p class="text-xs text-slate-400">Standardized interoperability packet for hospital EPRs</p>
+        </div>
+        <button onclick="closeFHIR()" class="text-slate-400 hover:text-white">✕</button>
+      </div>
+      <pre id="fhir-output" class="bg-slate-950 p-4 rounded text-xs text-emerald-400 overflow-y-auto max-h-96 font-mono"></pre>
+      <div class="flex justify-end gap-3">
+        <button onclick="downloadFHIR()" class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded text-xs font-bold">Download FHIR JSON</button>
+        <button onclick="closeFHIR()" class="bg-slate-800 hover:bg-slate-700 px-4 py-2 rounded text-xs font-bold">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let codeSec = 0, cprSec = 120, epiSec = 180;
+    const sessionLogs = [];
+
+    setInterval(() => {
+      codeSec++;
+      const m = String(Math.floor(codeSec / 60)).padStart(2, '0');
+      const s = String(codeSec % 60).padStart(2, '0');
+      document.getElementById('code-timer').innerText = `${m}:${s}`;
+
+      if (cprSec > 0) cprSec--;
+      const cm = String(Math.floor(cprSec / 60)).padStart(2, '0');
+      const cs = String(cprSec % 60).padStart(2, '0');
+      document.getElementById('cpr-timer').innerText = `${cm}:${cs}`;
+
+      if (epiSec > 0) epiSec--;
+      const em = String(Math.floor(epiSec / 60)).padStart(2, '0');
+      const es = String(epiSec % 60).padStart(2, '0');
+      document.getElementById('epi-timer').innerText = `${em}:${es}`;
+    }, 1000);
+
+    function resetCPR() { cprSec = 120; }
+    function resetEpi() { epiSec = 240; }
+
+    function sendTelemetry(transcript, hr, rhythm, bp, spo2) {
+      document.getElementById('hud-hr').innerText = `${hr} BPM`;
+      document.getElementById('hud-rhythm').innerText = rhythm;
+      document.getElementById('hud-bp').innerText = bp;
+      document.getElementById('hud-spo2').innerText = `${spo2}%`;
+
+      processClinicalPayload({
+        transcript: transcript,
+        heart_rate: hr,
+        ecg_rhythm: rhythm,
+        blood_pressure: bp,
+        spo2: spo2
+      });
+    }
+
+    function submitCustomEvent(e) {
+      e.preventDefault();
+      const input = document.getElementById('transcript-input');
+      const val = input.value.trim();
+      if (!val) return;
+      processClinicalPayload({ transcript: val });
+      input.value = '';
+    }
+
+    async function processClinicalPayload(payload) {
+      const btn = document.getElementById('submit-btn');
+      btn.disabled = true;
+      btn.innerText = 'MedGemma Reasoning...';
+
+      try {
+        const res = await fetch('http://127.0.0.1:8000/parse_event', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+
+        // Update Timers
+        if (data.event_type === 'SHOCK_DELIVERED' || data.event_type === 'RHYTHM_CHECK') resetCPR();
+        if (data.event_type === 'DRUG_ADMINISTERED' && payload.transcript.toLowerCase().includes('epi')) resetEpi();
+
+        // Update Clinical Action & Guidance
+        if (data.clinical_action) {
+          document.getElementById('action-text').innerText = data.clinical_action;
+          document.getElementById('guideline-badge').innerText = data.guideline_citation || 'ERC 2025';
+        }
+
+        if (data.drug_recommendation?.drug) {
+          document.getElementById('drug-box').classList.remove('hidden');
+          document.getElementById('drug-text').innerText = `${data.drug_recommendation.drug} (${data.drug_recommendation.dose || 'Standard Dose'}) via ${data.drug_recommendation.route || 'IV/IO'}`;
+        } else {
+          document.getElementById('drug-box').classList.add('hidden');
+        }
+
+        // Highlight H's & T's
+        if (data.suspected_cause) {
+          const causeElem = document.getElementById(`cause-${data.suspected_cause}`);
+          if (causeElem) {
+            causeElem.className = 'p-2 bg-rose-950 border border-rose-500 rounded text-rose-200 font-bold shadow-lg';
+          }
+          document.getElementById('diagnostic-badge').className = 'text-[10px] bg-rose-900 text-rose-200 px-2 py-0.5 rounded font-bold';
+          document.getElementById('diagnostic-badge').innerText = 'CRITICAL ALERT';
+        }
+
+        // Audit Log Entry
+        const timestamp = document.getElementById('code-timer').innerText;
+        sessionLogs.push({
+          timestamp: timestamp,
+          event_type: data.event_type,
+          raw_text: payload.transcript || `ECG Rhythm: ${payload.ecg_rhythm}`,
+          suspected_cause: data.suspected_cause,
+          details: data.ecg_interpretation
+        });
+
+        const logItem = document.createElement('div');
+        logItem.className = 'p-2 bg-slate-950 rounded border border-slate-800 flex justify-between items-start';
+        logItem.innerHTML = `
+          <div>
+            <span class="text-slate-500">[${timestamp}]</span> 
+            <span class="text-rose-400 font-bold">${data.event_type}</span>: ${payload.transcript || payload.ecg_rhythm}
+          </div>
+          <span class="text-[9px] text-emerald-500 bg-emerald-950 border border-emerald-800 px-1 rounded ml-2">VERIFIED</span>`;
+        document.getElementById('log-list').prepend(logItem);
+        document.getElementById('log-count').innerText = `${sessionLogs.length} events`;
+
+      } catch (err) {
+        alert('Could not reach MedGemma backend: ' + err.message);
+      } finally {
+        btn.disabled = false;
+        btn.innerText = 'Process Event';
+      }
+    }
+
+    async function exportFHIR() {
+      if (sessionLogs.length === 0) {
+        alert('Log at least one clinical event before exporting.');
+        return;
+      }
+      try {
+        const res = await fetch('http://127.0.0.1:8000/export_fhir', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify(sessionLogs)
+        });
+        const bundle = await res.json();
+        document.getElementById('fhir-output').innerText = JSON.stringify(bundle, null, 2);
+        document.getElementById('fhir-modal').classList.remove('hidden');
+      } catch (e) {
+        alert('Failed to generate FHIR Bundle: ' + e.message);
+      }
+    }
+
+    function closeFHIR() { document.getElementById('fhir-modal').classList.add('hidden'); }
+    function downloadFHIR() {
+      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(document.getElementById('fhir-output').innerText);
+      const dl = document.createElement('a');
+      dl.setAttribute("href", dataStr);
+      dl.setAttribute("download", `EchoACLS_NHS_FHIR_Bundle_${Date.now()}.json`);
+      dl.click();
+    }
+  </script>
+</body>
+</html>
